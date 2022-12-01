@@ -38,7 +38,7 @@ public class Server extends HttpServlet {
 	private static final long serialVersionUID = 1L;
     private static String JDBC_SERVER = "jdbc:mysql://34.171.110.43/csci201_studyspotfinalproject";
     private static String JDBC_LOCAL = "jdbc:mysql://localhost/csci201_studyspotfinalproject";
-    private static String JDBC = JDBC_SERVER;
+    private static String JDBC = JDBC_LOCAL;
 	private static String USER = "root";
 	private static String PASSWORD = "151515";
 	
@@ -78,11 +78,11 @@ public class Server extends HttpServlet {
 		case "studySpot": 
 			res = getStudySpot(data); 
 			break;
-		case "reviews": 
-			res = getReview(data); 
+		case "getReviews": 
+			res = getReviews(data); 
 			break;
-		case "tags": 
-			res = getTags(data); 
+		case "sendTags": 
+			res = sendTags(data); 
 			break;
 		case "avgReview": 
 			res = getAvgReview(data); 
@@ -90,7 +90,10 @@ public class Server extends HttpServlet {
 		case "sendReview": 
 			res = sendReview(data); 
 			break;
-		case "validate": 
+		case "register": 
+			res = registerUser(data); 
+			break;
+		case "login": 
 			res = loginUser(data); 
 			break;
 		default: 
@@ -117,6 +120,11 @@ public class Server extends HttpServlet {
 			st = conn.createStatement();
 			rs = st.executeQuery("SELECT * FROM study_spots");
 			while (rs.next()) {
+				double sum = rs.getDouble("sumReviews");
+				int num = rs.getInt("numReviews");
+				String rating = "No rating.";
+				if (num != 0) rating = String.format("%.2f", sum/num);
+				
 				StudySpotData ss = new StudySpotData(
 					rs.getString("name"),  
 					rs.getString("location"), 
@@ -125,7 +133,8 @@ public class Server extends HttpServlet {
 					rs.getString("hours"), 
 					rs.getBoolean("busy"), 
 					rs.getBoolean("quiet"), 
-					rs.getBoolean("outlets"));
+					rs.getBoolean("outlets"),
+					rating);
 				spots.add(ss);
 			}
 		} catch (SQLException sqle) {
@@ -160,6 +169,12 @@ public class Server extends HttpServlet {
 			if (!rs.next()) {
 				return gson.toJson(null);
 			}
+
+			double sum = rs.getDouble("sumReviews");
+			int num = rs.getInt("numReviews");
+			String rating = "No rating.";
+			if (num != 0) rating = String.format("%.2f", sum/num);
+			
 			ss = new StudySpotData(
 				rs.getString("name"),  
 				rs.getString("location"), 
@@ -168,7 +183,8 @@ public class Server extends HttpServlet {
 				rs.getString("hours"), 
 				rs.getBoolean("busy"), 
 				rs.getBoolean("quiet"), 
-				rs.getBoolean("outlets"));
+				rs.getBoolean("outlets"), 
+				rating);
 		} catch (SQLException sqle) {
 			System.out.println ("SQLException: " + sqle.getMessage());
 		} finally {
@@ -186,7 +202,7 @@ public class Server extends HttpServlet {
 		return gson.toJson(ss);
 	}
 
-	public String getReview(String data) {
+	public String getReviews(String data) {
 		Gson gson = new Gson();
 		StudySpotName ssn = gson.fromJson(data, StudySpotName.class);
 		String name = ssn.name;
@@ -219,30 +235,28 @@ public class Server extends HttpServlet {
 		return gson.toJson(reviews);
 	}
 
-	public String getTags(String data) {
+	public String sendTags(String data) {
+		System.out.println(">> sendTags");
 		Gson gson = new Gson();
 		Tags tags = gson.fromJson(data, Tags.class);
 		String name = tags.name;
 		Connection conn = null;
 		Statement st = null;
-		ResultSet rs = null;
 		boolean failed = false;
 		try {
 			conn = DriverManager.getConnection(JDBC, USER, PASSWORD);
 			st = conn.createStatement();
 			String stmt = String.format(
-					"UPDATE study_spot \r\n"
+					"UPDATE study_spots \r\n"
 					+ "SET busy = %b, quiet = %b, outlets = %b\r\n"
-					+ "WHERE name=%s;", tags.busy, tags.quiet, tags.outlets, name);
-			rs = st.executeQuery(stmt);
+					+ "WHERE name=\"%s\";", tags.busy, tags.quiet, tags.outlets, name);
+			System.out.println("stmt: " + stmt);
+			st.executeUpdate(stmt);
 		} catch (SQLException sqle) {
 			failed = true;
 			System.out.println ("SQLException: " + sqle.getMessage());
 		} finally {
 			try {
-				if (rs != null) {
-					rs.close();
-				}
 				if (st != null) {
 					st.close();
 				}
@@ -250,6 +264,7 @@ public class Server extends HttpServlet {
 				System.out.println("sqle: " + sqle.getMessage());
 			}
 		}
+		System.out.println(">> sendTags failed: " + failed);
 		return gson.toJson(!failed);
 	}
 
@@ -295,24 +310,20 @@ public class Server extends HttpServlet {
 		String name = review.name;
 		Connection conn = null;
 		Statement st = null;
-		ResultSet rs = null;
 		boolean failed = false;
 		try {
 			conn = DriverManager.getConnection(JDBC, USER, PASSWORD);
 			st = conn.createStatement();
 			String stmt = String.format(
 					"INSERT INTO reviews\r\n"
-					+ "VALUES (%s, %s);\r\n"
+					+ "VALUES (\"%s\", \"%s\");\r\n"
 					, review.review, name);
-			rs = st.executeQuery(stmt);
+			st.executeUpdate(stmt);
 		} catch (SQLException sqle) {
 			failed = true;
 			System.out.println ("SQLException: " + sqle.getMessage());
 		} finally {
 			try {
-				if (rs != null) {
-					rs.close();
-				}
 				if (st != null) {
 					st.close();
 				}
@@ -322,6 +333,45 @@ public class Server extends HttpServlet {
 		}
 		return gson.toJson(!failed);
 	}
+	
+	public String registerUser(String data) {
+		Gson gson = new Gson();
+		RegisterData reg = gson.fromJson(data, RegisterData.class);
+		String firstname = reg.firstname;
+		String lastname = reg.password;
+		String email = reg.email;
+		String password = reg.password;
+        Connection conn = null;
+        Statement st = null;
+		boolean failed = true;
+        try {
+        	conn = DriverManager.getConnection(JDBC, USER, PASSWORD);
+            st = conn.createStatement();
+            String stmt = String.format("INSERT INTO users (username, password, firstname, lastname) \r\n"
+            		+ "SELECT \"%s\", \"%s\", \"%s\", \"%s\" FROM DUAL \r\n"
+            		+ "WHERE NOT EXISTS (SELECT * FROM users \r\n"
+            		+ "      WHERE username=\"%s\" LIMIT 1)", 
+            		email, password, firstname, lastname, email);
+            if (st.executeUpdate(stmt) == 1) failed = false;
+        } catch (SQLException sqle) {
+            System.out.println("SQLException in login");
+            sqle.printStackTrace();
+            return "false";
+        } finally {
+            try {
+                if (st != null) {
+                    st.close();
+                }
+                if (conn != null) {
+                    conn.close();
+                }
+            } catch (SQLException sqle) {
+                System.out.println(sqle.getMessage());
+            }
+        }
+
+        return gson.toJson(!failed);
+    }
 	
 	public String loginUser(String data) {
 		Gson gson = new Gson();
@@ -380,7 +430,10 @@ class SendReview {
 }
 
 class RegisterData {
-	
+	String firstname;
+	String lastname;
+	String email;
+	String password;
 }
 
 class LoginData {
@@ -397,9 +450,10 @@ class StudySpotData {
     boolean busy;
     boolean quiet;
     boolean outlets;
+    String rating;
 
     public StudySpotData(String name, String location, double latitude, double longitude, String hours,
-			boolean busy, boolean quiet, boolean outlets) {
+			boolean busy, boolean quiet, boolean outlets, String rating) {
 		super();
 		this.name = name;
 		this.location = location;
@@ -409,6 +463,7 @@ class StudySpotData {
 		this.busy = busy;
 		this.quiet = quiet;
 		this.outlets = outlets;
+		this.rating = rating;
 	}
 }
 
