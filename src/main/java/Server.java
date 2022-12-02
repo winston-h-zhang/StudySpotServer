@@ -78,14 +78,11 @@ public class Server extends HttpServlet {
 		case "studySpot": 
 			res = getStudySpot(data); 
 			break;
-		case "getReviews": 
-			res = getReviews(data); 
-			break;
 		case "sendTags": 
 			res = sendTags(data); 
 			break;
-		case "avgReview": 
-			res = getAvgReview(data); 
+		case "getReviews": 
+			res = getReviews(data); 
 			break;
 		case "sendReview": 
 			res = sendReview(data); 
@@ -202,39 +199,6 @@ public class Server extends HttpServlet {
 		return gson.toJson(ss);
 	}
 
-	public String getReviews(String data) {
-		Gson gson = new Gson();
-		StudySpotName ssn = gson.fromJson(data, StudySpotName.class);
-		String name = ssn.name;
-		Connection conn = null;
-		Statement st = null;
-		ResultSet rs = null;
-		ArrayList<String> reviews = new ArrayList<String>();
-		try {
-			conn = DriverManager.getConnection(JDBC, USER, PASSWORD);
-			st = conn.createStatement();
-			rs = st.executeQuery("SELECT * FROM reviews WHERE study_spot=\"" + name + "\"");
-			while (rs.next()) {
-				reviews.add(rs.getString("review"));
-			}
-		} catch (SQLException sqle) {
-			System.out.println ("SQLException: " + sqle.getMessage());
-		} finally {
-			try {
-				if (rs != null) {
-					rs.close();
-				}
-				if (st != null) {
-					st.close();
-				}
-			} catch (SQLException sqle) {
-				System.out.println("sqle: " + sqle.getMessage());
-			}
-		}
-		// TODO: what if null?
-		return gson.toJson(reviews);
-	}
-
 	public String sendTags(String data) {
 		System.out.println(">> sendTags");
 		Gson gson = new Gson();
@@ -268,25 +232,26 @@ public class Server extends HttpServlet {
 		return gson.toJson(!failed);
 	}
 
-	public String getAvgReview(String data) {
+	public String getReviews(String data) {
 		Gson gson = new Gson();
 		StudySpotName ssn = gson.fromJson(data, StudySpotName.class);
 		String name = ssn.name;
 		Connection conn = null;
 		Statement st = null;
 		ResultSet rs = null;
-		Double avg = null;
+		ArrayList<Review> reviews = new ArrayList<Review>();
 		try {
 			conn = DriverManager.getConnection(JDBC, USER, PASSWORD);
 			st = conn.createStatement();
-			String stmt = String.format("SELECT * FROM study_spots WHERE name=\"%s\"", name);
+			String stmt = String.format("SELECT `review`, `username`, `location` FROM `reviews` WHERE `location`=\"%s\";", name);
 			rs = st.executeQuery(stmt);
-			rs.next();
-			double sum = rs.getDouble("sumReviews");
-			int num = rs.getInt("numReviews");
-			System.out.println(">> getAvgReview: " + sum + " " + num);
-			if (num == 0) return "null";
-			avg = sum / num;
+			while (rs.next()) {
+				Review r = new Review(
+					rs.getString("review"),
+					rs.getString("username"),
+					rs.getString("location"));
+				reviews.add(r);
+			}
 		} catch (SQLException sqle) {
 			System.out.println ("SQLException: " + sqle.getMessage());
 		} finally {
@@ -301,13 +266,16 @@ public class Server extends HttpServlet {
 				System.out.println("sqle: " + sqle.getMessage());
 			}
 		}
-		return gson.toJson(avg);
+		// TODO: what if null?
+		return gson.toJson(reviews);
 	}
 
 	public String sendReview(String data) {
 		Gson gson = new Gson();
-		SendReview review = gson.fromJson(data, SendReview.class);
-		String name = review.name;
+		Review r = gson.fromJson(data, Review.class);
+		String review = r.review;
+		String username = r.username;
+		String location = r.location;
 		Connection conn = null;
 		Statement st = null;
 		boolean failed = false;
@@ -315,9 +283,9 @@ public class Server extends HttpServlet {
 			conn = DriverManager.getConnection(JDBC, USER, PASSWORD);
 			st = conn.createStatement();
 			String stmt = String.format(
-					"INSERT INTO reviews\r\n"
-					+ "VALUES (\"%s\", \"%s\");\r\n"
-					, review.review, name);
+					"INSERT INTO reviews (`review`, `username`, `location`) \r\n"
+					+ "VALUES (\"%s\", \"%s\", \"%s\");", 
+					review, username, location);
 			st.executeUpdate(stmt);
 		} catch (SQLException sqle) {
 			failed = true;
@@ -411,6 +379,10 @@ public class Server extends HttpServlet {
 
         return "false";
     }
+
+	public String getUser(String data) {
+		return "";
+	}
 }
 
 class StudySpotName {
@@ -424,9 +396,16 @@ class Tags {
 	boolean outlets;
 }
 
-class SendReview {
-	String name;
+class Review {
 	String review;
+	String username;
+	String location;
+	
+	public Review(String review, String username, String location) {
+		this.review = review;
+		this.username = username;
+		this.location = location;
+	}
 }
 
 class RegisterData {
@@ -465,12 +444,4 @@ class StudySpotData {
 		this.outlets = outlets;
 		this.rating = rating;
 	}
-}
-
-class StudySpotsData {
-    ArrayList<StudySpotData> data;
-    
-    public StudySpotsData() {
-    	this.data = new ArrayList<>();
-    }
 }
