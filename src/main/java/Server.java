@@ -81,6 +81,9 @@ public class Server extends HttpServlet {
 		case "sendTags": 
 			res = sendTags(data); 
 			break;
+		case "sendRating": 
+			res = sendRating(data); 
+			break;
 		case "getReviews": 
 			res = getReviews(data); 
 			break;
@@ -198,7 +201,55 @@ public class Server extends HttpServlet {
 		}
 		return gson.toJson(ss);
 	}
+	
+	public String sendRating(String data) {
+		System.out.println(">> sendRating");
+		Gson gson = new Gson();
+		Rating r = gson.fromJson(data, Rating.class);
+		double rating = r.rating;
+		String username = r.username;
+		String location = r.location;
+		Connection conn = null;
+		Statement st = null;
+		ResultSet rs = null;
+		String res = null;
+		try {
+			conn = DriverManager.getConnection(JDBC, USER, PASSWORD);
+			st = conn.createStatement();
+			String stmt = String.format(
+					"UPDATE study_spots \r\n"
+					+ "SET sumReviews = sumReviews + %f, numReviews = numReviews + 1\r\n"
+					+ "WHERE name=\"%s\";", rating, location);
+			System.out.println("stmt: " + stmt);
+			st.executeUpdate(stmt);
+			
+			rs = st.executeQuery("SELECT * FROM study_spots WHERE name=\"" + location + "\"");
+			if (!rs.next()) {
+				return "No rating";
+			}
 
+			double sum = rs.getDouble("sumReviews");
+			int num = rs.getInt("numReviews");
+			res = "No rating";
+			if (num != 0 && sum > 0.1) res = String.format("%.2f", sum/num);
+		} catch (SQLException sqle) {
+			System.out.println ("SQLException: " + sqle.getMessage());
+			return "No rating";
+		} finally {
+			try {
+				if (rs != null) {
+					rs.close();
+				}
+				if (st != null) {
+					st.close();
+				}
+			} catch (SQLException sqle) {
+				System.out.println("sqle: " + sqle.getMessage());
+			}
+		}
+		return res;
+	}
+	
 	public String sendTags(String data) {
 		System.out.println(">> sendTags");
 		Gson gson = new Gson();
@@ -231,6 +282,7 @@ public class Server extends HttpServlet {
 		System.out.println(">> sendTags failed: " + failed);
 		return gson.toJson(!failed);
 	}
+	
 
 	public String getReviews(String data) {
 		Gson gson = new Gson();
@@ -381,12 +433,22 @@ public class Server extends HttpServlet {
     }
 
 	public String getUser(String data) {
+//		Gson gson = new Gson();
+//		User user = gson.fromJson(data, User.class);
+//		String email = login.email;
+//		String password = login.password;
+//        Connection conn = null;
+//        Statement st = null;
+//        ResultSet rs = null;
 		return "";
 	}
 }
 
 class StudySpotName {
 	String name;
+}
+class Username {
+	String username;
 }
 
 class Tags {
@@ -406,6 +468,12 @@ class Review {
 		this.username = username;
 		this.location = location;
 	}
+}
+
+class Rating {
+	double rating;
+	String username;
+	String location;
 }
 
 class RegisterData {
